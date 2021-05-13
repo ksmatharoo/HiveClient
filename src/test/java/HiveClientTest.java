@@ -1,6 +1,4 @@
-import junit.framework.TestCase;
-import org.apache.hadoop.hive.metastore.IMetaStoreClient;
-import org.apache.hadoop.hive.metastore.api.MetaException;
+import org.apache.hadoop.hive.metastore.api.Table;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SaveMode;
@@ -8,43 +6,43 @@ import org.apache.spark.sql.SparkSession;
 import org.junit.Test;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 public class HiveClientTest {
 
-
     @Test
     public void TestTableCreation() throws Exception {
 
+        String basePath = "c:/ksinghCode/java/HiveClient/spark-warehouse/t1";
         SparkSession sparkSession = SparkUtils.getSparkSession();
-        Dataset<Row> csv = sparkSession.read().option("header", "true").option("delimiter", ";").csv("src/test/resources/people.csv");
+        Dataset<Row> csv = sparkSession.read().option("header", "true").option("delimiter", ";").
+                csv("src/test/resources/people.csv");
 
-        HiveClient hiveClient = new HiveClient();
-        IMetaStoreClient metaStoreClient = hiveClient.createMetaStoreClient("src/test/resources/hive-site.xml");
+        HiveClient hiveClient = new HiveClient("src/test/resources/hive-site.xml");
         List<String> keys = new ArrayList<>();
         keys.add("job");
-        hiveClient.prepareTable("default", "t1", metaStoreClient,
-                csv.schema(), keys, "/home/ksingh/github-ksmatharoo/TestHiveClient/spark-warehouse/t1");
+        hiveClient.prepareTable("default", "t1",
+                csv.schema(), keys, basePath);
 
         csv.write().partitionBy(keys.get(0)).mode(SaveMode.Append).
-                parquet("/home/ksingh/github-ksmatharoo/TestHiveClient/spark-warehouse/t1");
+                parquet(basePath);
 
-        sparkSession.sql(" ALTER TABLE default.t1 ADD PARTITION (job='Developer') " +
-                "LOCATION '/home/ksingh/github-ksmatharoo/TestHiveClient/spark-warehouse/t1/job=Developer' ");
+        /*sparkSession.sql(" ALTER TABLE default.t1 ADD PARTITION (job='Developer') " +
+                "LOCATION 'c:/ksinghCode/java/HiveClient/spark-warehouse/t1/job=Developer' ");
+        */
 
+        List<Row> list = csv.select(csv.col(keys.get(0))).distinct().collectAsList();
+        Table table = hiveClient.getMetaStoreClient().getTable("default", "t1");
 
-        csv.select(csv.col(keys.get(0))).distinct().collectAsList();
+        for (Row r : list) {
+            String partitionKey = r.getString(0);
+            List<String> value = new ArrayList<>();
+            value.add(partitionKey);
+            hiveClient.addPartition(table, value, String.format("/job=%s", partitionKey));
+            sparkSession.sql("select * from default.t1 ").show(100, false);
+        }
+        sparkSession.sql("show partitions default.t1 ").show(100, false);
 
-        String location = metaStoreClient.getTable("default", "t1").getSd().getLocation();
-        //make the path and add the partition
-
-        sparkSession.sql("select * from default.t1 ").show(100, false);
-
-        System.out.println("tetsou");
-
-
+        System.out.println("test end");
     }
-
-
 }

@@ -1,3 +1,4 @@
+import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.conf.HiveConf;
@@ -6,18 +7,30 @@ import org.apache.hadoop.hive.metastore.api.*;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.hadoop.hive.ql.metadata.HiveStorageHandler;
 import org.apache.hadoop.hive.ql.metadata.HiveUtils;
-import org.apache.spark.sql.SparkSession;
-import org.apache.spark.sql.types.*;
+import org.apache.spark.sql.types.DataTypes;
+import org.apache.spark.sql.types.DecimalType;
+import org.apache.spark.sql.types.StructField;
+import org.apache.spark.sql.types.StructType;
 import org.apache.thrift.TException;
 
 import java.net.URI;
-import java.util.*;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 import static org.apache.hadoop.hive.metastore.api.hive_metastoreConstants.META_TABLE_STORAGE;
 
 @Slf4j
+@Data
 public class HiveClient {
+
+    IMetaStoreClient metaStoreClient;
+
+    public HiveClient(String hiveSitePath) throws MetaException {
+        this.metaStoreClient = createMetaStoreClient(hiveSitePath);
+    }
 
     public IMetaStoreClient createMetaStoreClient(String hiveSitePath) throws MetaException {
 
@@ -39,12 +52,10 @@ public class HiveClient {
                 }
             }
         };
-
         return RetryingMetaStoreClient.getProxy(hiveConf, hookLoader, HiveMetaStoreClient.class.getName());
     }
 
     public Table createPartitionedTable(
-            IMetaStoreClient metaStoreClient,
             String database,
             String table,
             URI location,
@@ -77,7 +88,7 @@ public class HiveClient {
         return hiveTable;
     }
 
-    public List<FieldSchema> getFieldSchemaList(StructType schema, List<String> keys, List<String> exclude) {
+    private List<FieldSchema> getFieldSchemaList(StructType schema, List<String> keys, List<String> exclude) {
         List<FieldSchema> collect;
         if (Objects.nonNull(keys)) {
             collect = Arrays.stream(schema.fields()).filter(col ->
@@ -117,8 +128,7 @@ public class HiveClient {
         throw new UnsupportedOperationException(field.name() + " has " + field.dataType() + " which is unsupported");
     }
 
-
-    public void prepareTable(String dbName, String tableName,IMetaStoreClient metaStoreClient,
+    public void prepareTable(String dbName, String tableName,
                              StructType schema,
                              List<String> keys,
                              String path) throws Exception {
@@ -127,8 +137,7 @@ public class HiveClient {
         final List<FieldSchema> partitionKey = getFieldSchemaList(schema, null, keys);
 
         if (!metaStoreClient.tableExists(dbName, tableName)) {
-            createPartitionedTable(metaStoreClient, dbName, tableName,
-                    // new URI("/home/ksingh/github-ksmatharoo/TestHiveClient/spark-warehouse"),
+            createPartitionedTable(dbName, tableName,
                     new URI(path),
                     columns,
                     partitionKey,
@@ -141,41 +150,18 @@ public class HiveClient {
         }
     }
 
-    public static void main(String[] args) throws Exception {
+    public void addPartition(Table table,
+                             List<String> value, String location) throws TException {
 
-        //String warehouseLocation = new File("spark-warehouse").getAbsolutePath();
-        SparkSession spark = SparkSession
-                .builder()
-                .master("local[1]")
-                .appName("Java Spark Hive Example")
-                //.config("spark.sql.warehouse.dir", "/home/ksingh/github-ksmatharoo/TestHiveClient/spark-warehouse")
-                //.config("spark.sql.warehouse.dir", warehouseLocation)
-                .enableHiveSupport()
-                .getOrCreate();
+        Partition part = new Partition();
+        part.setDbName(table.getDbName());
+        part.setTableName(table.getTableName());
+        part.setValues(value);
+        part.setParameters(new HashMap<String, String>());
+        part.setSd(table.getSd().deepCopy());
+        part.getSd().setSerdeInfo(table.getSd().getSerdeInfo());
+        part.getSd().setLocation(table.getSd().getLocation() + location);
 
-        HiveClient hiveClient = new HiveClient();
-        IMetaStoreClient metaStoreClient = hiveClient.createMetaStoreClient("src/main/resources/hive-site.xml");
-
-        List<FieldSchema> columns = new ArrayList<>();
-        columns.add(new FieldSchema("id", "bigint", ""));
-        columns.add(new FieldSchema("qty", "bigint", ""));
-        columns.add(new FieldSchema("name", "string", ""));
-
-        List<FieldSchema> partitionKey = new ArrayList<>();
-        partitionKey.add(new FieldSchema("rx_mth_cd", "string", ""));
-
-
-        if (!metaStoreClient.tableExists("default", "test1")) {
-            hiveClient.createPartitionedTable(metaStoreClient, "default", "test1",
-                    new URI("/home/ksingh/github-ksmatharoo/TestHiveClient/spark-warehouse"),
-                    columns,
-                    partitionKey,
-                    "org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe",
-                    "org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat",
-                    "org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat"
-            );
-        }
-        spark.sql("show databases ").show(false);
-        System.out.println("test");
+        this.metaStoreClient.add_partition(part);
     }
 }
