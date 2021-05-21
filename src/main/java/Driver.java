@@ -2,6 +2,15 @@ import org.apache.commons.cli.*;
 
 import java.util.Properties;
 
+/**
+Driver -config
+src/main/resources/config.properties
+-properties
+src/main/resources/env.properties
+-sparkConf
+src/main/resources/sparkConf.conf
+*/
+
 public class Driver {
 
     public static void main(String[] args) throws Exception {
