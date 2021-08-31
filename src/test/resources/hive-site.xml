@@ -27,7 +27,7 @@
 
         <property>
             <name>javax.jdo.option.ConnectionURL</name>
-            <value>jdbc:derby:memory:c:/ksinghCode/java/HiveClient/metastore_db;create=true</value>
+            <value>jdbc:derby:;databaseName=c:/ksinghCode/java/HiveClient/metastore_db;create=true</value>
         </property>
 
         <property>
